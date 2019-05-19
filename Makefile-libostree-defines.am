@@ -31,7 +31,6 @@ libostree_public_headers = \
 	src/libostree/ostree-types.h \
 	src/libostree/ostree-repo-file.h \
 	src/libostree/ostree-diff.h \
-	src/libostree/ostree-gpg-verify-result.h \
 	src/libostree/ostree-sepolicy.h \
 	src/libostree/ostree-sysroot.h \
 	src/libostree/ostree-sysroot-upgrader.h \
@@ -47,6 +46,12 @@ libostree_public_headers = \
 	src/libostree/ostree-repo-finder-override.h \
 	src/libostree/ostree-kernel-args.h \
 	$(NULL)
+
+if USE_GPGME
+libostree_public_headers += \
+	src/libostree/ostree-gpg-verify-result.h \
+	$(NULL)
+endif
 
 # This one is generated via configure.ac, and the gtk-doc
 # code hence needs to look in the builddir.
