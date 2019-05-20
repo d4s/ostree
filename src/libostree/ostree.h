@@ -32,7 +32,6 @@
 #include <ostree-deployment.h>
 #include <ostree-bootconfig-parser.h>
 #include <ostree-diff.h>
-#include <ostree-gpg-verify-result.h>
 #include <ostree-ref.h>
 #include <ostree-repo-finder.h>
 #include <ostree-repo-finder-avahi.h>
@@ -42,3 +41,7 @@
 #include <ostree-autocleanups.h>
 #include <ostree-version.h>
 #include <ostree-kernel-args.h>
+
+#if defined(HAVE_GPGME)
+#include <ostree-gpg-verify-result.h>
+#endif

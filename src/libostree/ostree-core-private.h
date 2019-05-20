@@ -190,9 +190,11 @@ _ostree_repo_mode_is_bare (OstreeRepoMode mode)
     mode == OSTREE_REPO_MODE_BARE_USER_ONLY;
 }
 
+#if defined(HAVE_GPGME)
 GVariant *
 _ostree_detached_metadata_append_gpg_sig (GVariant   *existing_metadata,
                                           GBytes     *signature_bytes);
+#endif
 
 GFile *
 _ostree_get_default_sysroot_path (void);

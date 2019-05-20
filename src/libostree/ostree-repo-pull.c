@@ -260,6 +260,7 @@ static gboolean scan_one_metadata_object (OtPullData                 *pull_data,
                                           GCancellable               *cancellable,
                                           GError                    **error);
 static void scan_object_queue_data_free (ScanObjectQueueData *scan_data);
+#if defined(HAVE_GPGME)
 static gboolean
 gpg_verify_unwritten_commit (OtPullData                 *pull_data,
                              const char                 *checksum,
@@ -268,7 +269,7 @@ gpg_verify_unwritten_commit (OtPullData                 *pull_data,
                              const OstreeCollectionRef  *ref,
                              GCancellable               *cancellable,
                              GError                    **error);
-
+#endif /* HAVE_GPGME */
 
 static gboolean
 update_progress (gpointer user_data)
@@ -1300,6 +1301,7 @@ meta_fetch_on_complete (GObject           *object,
        */
       if (objtype == OSTREE_OBJECT_TYPE_COMMIT)
         {
+#if defined(HAVE_GPGME)
           /* Do GPG verification. `detached_data` may be NULL if no detached
            * metadata was found during pull; that's handled by
            * gpg_verify_unwritten_commit(). If we ever change the pull code to
@@ -1311,6 +1313,7 @@ meta_fetch_on_complete (GObject           *object,
           if (!gpg_verify_unwritten_commit (pull_data, checksum, metadata, detached_data,
                                             fetch_data->requested_ref, pull_data->cancellable, error))
             goto out;
+#endif /* HAVE_GPGME */
 
           if (!ostree_repo_mark_commit_partial (pull_data->repo, checksum, TRUE, error))
             goto out;
@@ -1433,6 +1436,7 @@ static_deltapart_fetch_on_complete (GObject           *object,
     g_clear_pointer (&fetch_data, fetch_static_delta_data_free);
 }
 
+#if defined(HAVE_GPGME)
 static gboolean
 process_verify_result (OtPullData            *pull_data,
                        const char            *checksum,
@@ -1497,6 +1501,7 @@ gpg_verify_unwritten_commit (OtPullData                 *pull_data,
 
   return TRUE;
 }
+#endif /* HAVE_GPGME */
 
 static gboolean
 commitstate_is_partial (OtPullData   *pull_data,
@@ -1674,6 +1679,7 @@ check_remote_matches_collection_id (OstreeRepo  *repo,
   return g_str_equal (remote_collection_id, collection_id);
 }
 
+#if defined(HAVE_GPGME)
 /**
  * ostree_repo_resolve_keyring_for_collection:
  * @self: an #OstreeRepo
@@ -1764,6 +1770,7 @@ ostree_repo_resolve_keyring_for_collection (OstreeRepo    *self,
       return NULL;
     }
 }
+#endif /* HAVE_GPGME */
 
 #ifdef HAVE_LIBCURL_OR_LIBSOUP
 
@@ -1792,6 +1799,7 @@ scan_commit_object (OtPullData                 *pull_data,
                            GINT_TO_POINTER (depth));
     }
 
+#if defined(HAVE_GPGME)
   /* See comment in process_verify_result() - we now gpg check before writing,
    * but also ensure we've done it here if not already.
    */
@@ -1814,6 +1822,7 @@ scan_commit_object (OtPullData                 *pull_data,
       if (!process_verify_result (pull_data, checksum, result, error))
         return FALSE;
     }
+#endif /* HAVE_GPGME */
 
   /* If we found a legacy transaction flag, assume we have to scan.
    * We always do a scan of dirtree objects; see
@@ -2401,9 +2410,11 @@ process_one_static_delta (OtPullData                 *pull_data,
           g_autofree char *detached_path = _ostree_get_relative_static_delta_path (from_revision, to_revision, "commitmeta");
           g_autoptr(GVariant) detached_data = g_variant_lookup_value (metadata, detached_path, G_VARIANT_TYPE("a{sv}"));
 
+#if defined(HAVE_GPGME)
           if (!gpg_verify_unwritten_commit (pull_data, to_revision, to_commit, detached_data,
                                             ref, cancellable, error))
             return FALSE;
+#endif /* HAVE_GPGME */
 
           if (detached_data && !ostree_repo_write_commit_detached_metadata (pull_data->repo,
                                                                             to_revision,
@@ -2742,6 +2753,7 @@ on_superblock_fetched (GObject   *src,
       ot_checksum_update_bytes (&hasher, delta_superblock_data);
       ot_checksum_get_digest (&hasher, actual_summary_digest, sizeof (actual_summary_digest));
 
+#if defined(HAVE_GPGME)
       /* At this point we've GPG verified the data, so in theory
        * could trust that they provided the right data, but let's
        * make this a hard error.
@@ -2752,6 +2764,7 @@ on_superblock_fetched (GObject   *src,
                        "GPG verification enabled, but no summary signatures found (use gpg-verify-summary=false in remote config to disable)");
           goto out;
         }
+#endif /* HAVE_GPGME */
 
       if (expected_summary_digest && memcmp (expected_summary_digest, actual_summary_digest, sizeof (actual_summary_digest)))
         {
@@ -3727,6 +3740,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
 
   if (_ostree_repo_remote_name_is_file (remote_name_or_baseurl))
     {
+#if defined(HAVE_GPGME)
       /* For compatibility with pull-local, don't gpg verify local
        * pulls by default.
        */
@@ -3737,6 +3751,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
                        "Must specify remote name to enable gpg verification");
           goto out;
         }
+#endif /* HAVE_GPGME */
     }
   else
     {
@@ -3745,6 +3760,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
       g_free (pull_data->remote_name);
       pull_data->remote_name = g_strdup (remote_name_or_baseurl);
 
+#if defined(HAVE_GPGME)
       /* Fetch GPG verification settings from remote if it wasn't already
        * explicitly set in the options. */
       if (!opt_gpg_verify_set)
@@ -3756,6 +3772,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
         if (!ostree_repo_remote_get_gpg_verify_summary (self, pull_data->remote_name,
                                                         &pull_data->gpg_verify_summary, error))
           goto out;
+#endif /* HAVE_GPGME */
 
       /* NOTE: If changing this, see the matching implementation in
        * ostree-sysroot-upgrader.c
@@ -4060,12 +4077,14 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
           goto out;
       }
 
+#if defined(HAVE_GPGME)
     if (!bytes_summary && pull_data->gpg_verify_summary)
       {
         g_set_error (error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
                      "GPG verification enabled, but no summary found (use gpg-verify-summary=false in remote config to disable)");
         goto out;
       }
+#endif /* HAVE_GPGME */
 
     if (!bytes_summary && pull_data->require_static_deltas)
       {
@@ -4074,6 +4093,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
         goto out;
       }
 
+#if defined(HAVE_GPGME)
     if (!bytes_sig && pull_data->gpg_verify_summary)
       {
         g_set_error (error, OSTREE_GPG_ERROR, OSTREE_GPG_ERROR_NO_SIGNATURE,
@@ -4132,6 +4152,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
               }
           }
       }
+#endif /* HAVE_GPGME */
 
     if (bytes_summary)
       {
@@ -4614,6 +4635,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
                                 pull_data->remote_name, g_hash_table_size (requested_refs_to_fetch));
 
       const char *gpg_verify_state;
+#if defined(HAVE_GPGME)
       if (pull_data->gpg_verify_summary)
         {
           if (pull_data->gpg_verify)
@@ -4622,6 +4644,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
             gpg_verify_state = "summary-only";
         }
       else
+#endif /* HAVE_GPGME */
         gpg_verify_state = (pull_data->gpg_verify ? "commit" : "disabled");
       g_string_append_printf (msg, "\nsecurity: GPG: %s ", gpg_verify_state);
       OstreeFetcherURI *first_uri = pull_data->meta_mirrorlist->pdata[0];
@@ -5526,6 +5549,7 @@ find_remotes_cb (GObject      *obj,
                                                                &error))
                 goto error;
 
+#if defined(HAVE_GPGME)
               g_autoptr(OstreeGpgVerifyResult) verify_result = NULL;
 
               verify_result = ostree_repo_verify_commit_for_remote (self,
@@ -5544,6 +5568,7 @@ find_remotes_cb (GObject      *obj,
                   g_prefix_error (&error, "Commit %s: ", commit_metadata->checksum);
                   goto error;
                 }
+#endif /* HAVE_GPGME */
 
               if (commit_bytes != NULL)
                 break;
@@ -5970,7 +5995,11 @@ ostree_repo_pull_from_remotes_async (OstreeRepo                           *self,
 
       g_variant_dict_insert (&local_options_dict, "flags", "i", OSTREE_REPO_PULL_FLAGS_UNTRUSTED | flags);
       g_variant_dict_insert_value (&local_options_dict, "collection-refs", g_variant_builder_end (&refs_to_pull_builder));
+#if defined(HAVE_GPGME)
       g_variant_dict_insert (&local_options_dict, "gpg-verify", "b", TRUE);
+#else
+      g_variant_dict_insert (&local_options_dict, "gpg-verify", "b", FALSE);
+#endif /* HAVE_GPGME */
       g_variant_dict_insert (&local_options_dict, "gpg-verify-summary", "b", FALSE);
       g_variant_dict_insert (&local_options_dict, "inherit-transaction", "b", TRUE);
       if (result->remote->refspec_name != NULL)
@@ -6140,6 +6169,7 @@ ostree_repo_remote_fetch_summary_with_options (OstreeRepo    *self,
                                   error))
     goto out;
 
+#if defined(HAVE_GPGME)
   if (!ostree_repo_remote_get_gpg_verify_summary (self, name, &gpg_verify_summary, error))
     goto out;
 
@@ -6171,6 +6201,7 @@ ostree_repo_remote_fetch_summary_with_options (OstreeRepo    *self,
       if (!ostree_gpg_verify_result_require_valid_signature (result, error))
         goto out;
     }
+#endif /* HAVE_GPGME */
 
   if (!summary_is_from_cache && summary && signatures)
     {

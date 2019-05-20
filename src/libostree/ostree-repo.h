@@ -31,7 +31,9 @@
 #include "ostree-ref.h"
 #include "ostree-repo-finder.h"
 #include "ostree-sepolicy.h"
+#if defined(HAVE_GPGME)
 #include "ostree-gpg-verify-result.h"
+#endif
 
 G_BEGIN_DECLS
 
@@ -200,18 +202,6 @@ gboolean      ostree_repo_remote_get_url (OstreeRepo   *self,
                                           GError      **error);
 
 _OSTREE_PUBLIC
-gboolean      ostree_repo_remote_get_gpg_verify (OstreeRepo  *self,
-                                                 const char  *name,
-                                                 gboolean    *out_gpg_verify,
-                                                 GError     **error);
-
-_OSTREE_PUBLIC
-gboolean      ostree_repo_remote_get_gpg_verify_summary (OstreeRepo  *self,
-                                                         const char  *name,
-                                                         gboolean    *out_gpg_verify_summary,
-                                                         GError     **error);
-
-_OSTREE_PUBLIC
 gboolean      ostree_repo_get_remote_option (OstreeRepo  *self,
                                              const char  *remote_name,
                                              const char  *option_name,
@@ -234,14 +224,6 @@ gboolean      ostree_repo_get_remote_boolean_option (OstreeRepo  *self,
                                                      gboolean    *out_value,
                                                      GError     **error);
 
-_OSTREE_PUBLIC
-gboolean      ostree_repo_remote_gpg_import (OstreeRepo         *self,
-                                             const char         *name,
-                                             GInputStream       *source_stream,
-                                             const char * const *key_ids,
-                                             guint              *out_imported,
-                                             GCancellable       *cancellable,
-                                             GError            **error);
 
 _OSTREE_PUBLIC
 gboolean      ostree_repo_remote_fetch_summary (OstreeRepo    *self,
@@ -1337,6 +1319,37 @@ gboolean ostree_repo_sign_delta (OstreeRepo     *self,
                                  GCancellable   *cancellable,
                                  GError        **error);
 
+
+_OSTREE_PUBLIC
+gboolean ostree_repo_verify_commit (OstreeRepo   *self,
+                                    const gchar  *commit_checksum,
+                                    GFile        *keyringdir,
+                                    GFile        *extra_keyring,
+                                    GCancellable *cancellable,
+                                    GError      **error);
+
+#if defined(HAVE_GPGME)
+_OSTREE_PUBLIC
+gboolean      ostree_repo_remote_get_gpg_verify (OstreeRepo  *self,
+                                                 const char  *name,
+                                                 gboolean    *out_gpg_verify,
+                                                 GError     **error);
+
+_OSTREE_PUBLIC
+gboolean      ostree_repo_remote_get_gpg_verify_summary (OstreeRepo  *self,
+                                                         const char  *name,
+                                                         gboolean    *out_gpg_verify_summary,
+                                                         GError     **error);
+_OSTREE_PUBLIC
+
+gboolean      ostree_repo_remote_gpg_import (OstreeRepo         *self,
+                                             const char         *name,
+                                             GInputStream       *source_stream,
+                                             const char * const *key_ids,
+                                             guint              *out_imported,
+                                             GCancellable       *cancellable,
+                                             GError            **error);
+
 _OSTREE_PUBLIC
 gboolean
 ostree_repo_add_gpg_signature_summary (OstreeRepo     *self,
@@ -1351,14 +1364,6 @@ gboolean ostree_repo_append_gpg_signature (OstreeRepo     *self,
                                            GBytes         *signature_bytes,
                                            GCancellable   *cancellable,
                                            GError        **error);
-
-_OSTREE_PUBLIC
-gboolean ostree_repo_verify_commit (OstreeRepo   *self,
-                                    const gchar  *commit_checksum,
-                                    GFile        *keyringdir,
-                                    GFile        *extra_keyring,
-                                    GCancellable *cancellable,
-                                    GError      **error);
 
 _OSTREE_PUBLIC
 OstreeGpgVerifyResult * ostree_repo_verify_commit_ext (OstreeRepo    *self,
@@ -1393,6 +1398,7 @@ OstreeGpgVerifyResult * ostree_repo_verify_summary (OstreeRepo    *self,
                                                     GBytes        *signatures,
                                                     GCancellable  *cancellable,
                                                     GError       **error);
+#endif /* HAVE_GPGME */
 
 _OSTREE_PUBLIC
 gboolean ostree_repo_regenerate_summary (OstreeRepo     *self,

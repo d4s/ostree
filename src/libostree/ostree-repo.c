@@ -38,7 +38,11 @@
 #include "ostree-repo-private.h"
 #include "ostree-repo-file.h"
 #include "ostree-repo-file-enumerator.h"
+
+#if defined(HAVE_GPGME)
 #include "ostree-gpg-verifier.h"
+#endif
+
 #include "ostree-repo-static-delta-private.h"
 #include "ot-fs-utils.h"
 #include "ostree-autocleanups.h"
@@ -139,9 +143,11 @@ G_STATIC_ASSERT(sizeof(OstreeRepoPruneOptions) ==
 typedef struct {
   GObjectClass parent_class;
 
+#if defined(HAVE_GPGME)
   void (*gpg_verify_result) (OstreeRepo *self,
                              const char *checksum,
                              OstreeGpgVerifyResult *result);
+#endif
 } OstreeRepoClass;
 
 enum {
@@ -1167,6 +1173,7 @@ ostree_repo_class_init (OstreeRepoClass *klass)
                                                         NULL,
                                                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
+#if defined(HAVE_GPGME)
   /**
    * OstreeRepo::gpg-verify-result:
    * @self: an #OstreeRepo
@@ -1189,16 +1196,19 @@ ostree_repo_class_init (OstreeRepoClass *klass)
                                              G_TYPE_NONE, 2,
                                              G_TYPE_STRING,
                                              OSTREE_TYPE_GPG_VERIFY_RESULT);
+#endif /* HAVE_GPGME */
 }
 
 static void
 ostree_repo_init (OstreeRepo *self)
 {
-  static gsize gpgme_initialized;
   const GDebugKey test_error_keys[] = {
     { "pre-commit", OSTREE_REPO_TEST_ERROR_PRE_COMMIT },
     { "invalid-cache", OSTREE_REPO_TEST_ERROR_INVALID_CACHE },
   };
+
+#if defined(HAVE_GPGME)
+  static gsize gpgme_initialized;
 
   if (g_once_init_enter (&gpgme_initialized))
     {
@@ -1206,6 +1216,7 @@ ostree_repo_init (OstreeRepo *self)
       gpgme_set_locale (NULL, LC_CTYPE, setlocale (LC_CTYPE, NULL));
       g_once_init_leave (&gpgme_initialized, 1);
     }
+#endif
 
   self->test_error_flags = g_parse_debug_string (g_getenv ("OSTREE_REPO_TEST_ERROR"),
                                                  test_error_keys, G_N_ELEMENTS (test_error_keys));
@@ -1987,6 +1998,7 @@ ostree_repo_remote_get_url (OstreeRepo  *self,
   return TRUE;
 }
 
+#if defined(HAVE_GPGME)
 /**
  * ostree_repo_remote_get_gpg_verify:
  * @self: Repo
@@ -2314,6 +2326,7 @@ out:
 
   return ret;
 }
+#endif /* HAVE_GPGME */
 
 /**
  * ostree_repo_remote_fetch_summary:
@@ -4876,6 +4889,7 @@ ostree_repo_pull_default_console_progress_changed (OstreeAsyncProgress *progress
   glnx_console_text (buf->str);
 }
 
+#if defined(HAVE_GPGME)
 /**
  * ostree_repo_append_gpg_signature:
  * @self: Self
@@ -4913,6 +4927,7 @@ ostree_repo_append_gpg_signature (OstreeRepo     *self,
 
   return TRUE;
 }
+#endif /* HAVE_GPGME */
 
 static gboolean
 sign_data (OstreeRepo     *self,
@@ -4923,6 +4938,7 @@ sign_data (OstreeRepo     *self,
            GCancellable   *cancellable,
            GError        **error)
 {
+#if defined(HAVE_GPGME)
   g_auto(GLnxTmpfile) tmpf = { 0, };
   if (!glnx_open_tmpfile_linkable_at (self->tmp_dir_fd, ".", O_RDWR | O_CLOEXEC,
                                       &tmpf, error))
@@ -4973,6 +4989,10 @@ sign_data (OstreeRepo     *self,
   if (out_signature)
     *out_signature = g_mapped_file_get_bytes (signature_file);
   return TRUE;
+#else
+  /* FIXME: Return false until refactoring */
+  return FALSE;
+#endif /* HAVE_GPGME */
 }
 
 /**
@@ -4994,6 +5014,7 @@ ostree_repo_sign_commit (OstreeRepo     *self,
                          GCancellable   *cancellable,
                          GError        **error)
 {
+#if defined(HAVE_GPGME)
   g_autoptr(GBytes) commit_data = NULL;
   g_autoptr(GBytes) signature = NULL;
 
@@ -5057,6 +5078,10 @@ ostree_repo_sign_commit (OstreeRepo     *self,
     return FALSE;
 
   return TRUE;
+#else
+  /* FIXME: Return false until refactoring */
+  return FALSE;
+#endif /* HAVE_GPGME */
 }
 
 /**
@@ -5086,6 +5111,7 @@ ostree_repo_sign_delta (OstreeRepo     *self,
   return FALSE;
 }
 
+#if defined(HAVE_GPGME)
 /**
  * ostree_repo_add_gpg_signature_summary:
  * @self: Self
@@ -5380,6 +5406,7 @@ _ostree_repo_verify_commit_internal (OstreeRepo    *self,
                                                 keyringdir, extra_keyring,
                                                 cancellable, error);
 }
+#endif /* HAVE_GPGME */
 
 /**
  * ostree_repo_verify_commit:
@@ -5403,7 +5430,8 @@ ostree_repo_verify_commit (OstreeRepo   *self,
                            GCancellable *cancellable,
                            GError      **error)
 {
-  g_autoptr(OstreeGpgVerifyResult) result = NULL;
+#if defined(HAVE_GPGME)
+    g_autoptr(OstreeGpgVerifyResult) result = NULL;
 
   result = ostree_repo_verify_commit_ext (self, commit_checksum,
                                           keyringdir, extra_keyring,
@@ -5412,8 +5440,13 @@ ostree_repo_verify_commit (OstreeRepo   *self,
   if (!ostree_gpg_verify_result_require_valid_signature (result, error))
     return glnx_prefix_error (error, "Commit %s", commit_checksum);
   return TRUE;
+#else
+  /* FIXME: Return false until refactoring */
+  return FALSE;
+#endif /* HAVE_GPGME */
 }
 
+#if defined(HAVE_GPGME)
 /**
  * ostree_repo_verify_commit_ext:
  * @self: Repository
@@ -5562,6 +5595,7 @@ ostree_repo_verify_summary (OstreeRepo    *self,
                                                 cancellable,
                                                 error);
 }
+#endif /* HAVE_GPGME */
 
 /* Add an entry for a @ref ↦ @checksum mapping to an `a(s(t@ay@a{sv}))`
  * @refs_builder to go into a `summary` file. This includes building the

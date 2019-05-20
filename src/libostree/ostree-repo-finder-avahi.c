@@ -788,10 +788,12 @@ ostree_avahi_service_build_repo_finder_result (OstreeAvahiService               
       g_autoptr(UriAndKeyring) resolved_repo = NULL;
       g_autoptr(OstreeRemote) keyring_remote = NULL;
 
+#if defined(HAVE_GPGME)
       /* Look up the GPG keyring for this ref. */
       keyring_remote = ostree_repo_resolve_keyring_for_collection (parent_repo,
                                                                    ref->collection_id,
                                                                    cancellable, &error);
+#endif /* HAVE_GPGME */
 
       if (keyring_remote == NULL)
         {

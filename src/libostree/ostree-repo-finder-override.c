@@ -185,10 +185,12 @@ ostree_repo_finder_override_resolve_async (OstreeRepoFinder                  *fi
         {
           g_autoptr(OstreeRemote) keyring_remote = NULL;
 
+#if defined(HAVE_GPGME)
           /* Look up the GPG keyring for this ref. */
           keyring_remote = ostree_repo_resolve_keyring_for_collection (parent_repo,
                                                                        refs[j]->collection_id,
                                                                        cancellable, &local_error);
+#endif
 
           if (keyring_remote == NULL)
             {
@@ -218,7 +220,6 @@ ostree_repo_finder_override_resolve_async (OstreeRepoFinder                  *fi
               g_key_file_set_string (remote->options, remote->group, "url", remote_uri);
               g_key_file_set_boolean (remote->options, remote->group, "gpg-verify", TRUE);
               g_key_file_set_boolean (remote->options, remote->group, "gpg-verify-summary", FALSE);
-
               supported_ref_to_checksum = g_hash_table_lookup (repo_remote_to_refs, remote);
 
               if (supported_ref_to_checksum == NULL)

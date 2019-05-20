@@ -479,10 +479,12 @@ G_GNUC_END_IGNORE_DEPRECATIONS
                   continue;
                 }
 
+#if defined(HAVE_GPGME)
               /* Finally, look up the GPG keyring for this ref. */
               keyring_remote = ostree_repo_resolve_keyring_for_collection (parent_repo,
                                                                            ref->collection_id,
                                                                            cancellable, &local_error);
+#endif
 
               if (keyring_remote == NULL)
                 {

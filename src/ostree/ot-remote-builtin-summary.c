@@ -92,6 +92,7 @@ ot_remote_builtin_summary (int argc, char **argv, OstreeCommandInvocation *invoc
 
   ot_dump_summary_bytes (summary_bytes, flags);
 
+#if defined(HAVE_GPGME)
   if (!ostree_repo_remote_get_gpg_verify_summary (repo, remote_name,
                                                   &gpg_verify_summary,
                                                   error))
@@ -124,6 +125,7 @@ ot_remote_builtin_summary (int argc, char **argv, OstreeCommandInvocation *invoc
       g_print ("\n");
       ostree_print_gpg_verify_result (result);
     }
+#endif /* HAVE_GPGME */
 
   ret = TRUE;
 out:

@@ -35,6 +35,7 @@ static GOptionEntry options[] = {
   { NULL }
 };
 
+#if defined(HAVE_GPGME)
 static gboolean
 deployment_get_gpg_verify (OstreeDeployment *deployment,
                            OstreeRepo *repo)
@@ -61,6 +62,7 @@ deployment_get_gpg_verify (OstreeDeployment *deployment,
 
   return gpg_verify;
 }
+#endif /* HAVE_GPGME */
 
 
 static gboolean
@@ -136,6 +138,7 @@ deployment_print_status (OstreeSysroot    *sysroot,
         g_print ("    `- %s\n", source_title);
     }
 
+#if defined(HAVE_GPGME)
   if (deployment_get_gpg_verify (deployment, repo))
     {
       g_autoptr(GString) output_buffer = g_string_sized_new (256);
@@ -168,6 +171,7 @@ deployment_print_status (OstreeSysroot    *sysroot,
 
       g_print ("%s", output_buffer->str);
     }
+#endif /* HAVE_GPGME */
 
   return TRUE;
 }
