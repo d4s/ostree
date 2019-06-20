@@ -53,6 +53,16 @@ libostree_public_headers += \
 	$(NULL)
 endif
 
+if ENABLE_EXPERIMENTAL_API
+libostree_public_headers += \
+	src/libostree/ostree-sign.h \
+	$(NULL)
+if USE_LIBSODIUM
+#	src/libostree/ostree-sign-ed25519.h \
+#	$(NULL)
+endif # USE_LIBSODIUM
+endif
+
 # This one is generated via configure.ac, and the gtk-doc
 # code hence needs to look in the builddir.
 libostree_public_built_headers = src/libostree/ostree-version.h

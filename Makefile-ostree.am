@@ -61,6 +61,7 @@ nodist_ostree_SOURCES = \
 
 if ENABLE_EXPERIMENTAL_API
 ostree_SOURCES += \
+	src/ostree/ot-builtin-sign.c \
 	$(NULL)
 endif
 
