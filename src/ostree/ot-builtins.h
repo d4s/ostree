@@ -41,7 +41,9 @@ BUILTINPROTO(diff);
 BUILTINPROTO(export);
 BUILTINPROTO(find_remotes);
 BUILTINPROTO(create_usb);
+#if defined(HAVE_GPGME)
 BUILTINPROTO(gpg_sign);
+#endif
 BUILTINPROTO(init);
 BUILTINPROTO(log);
 BUILTINPROTO(pull);
@@ -52,6 +54,9 @@ BUILTINPROTO(refs);
 BUILTINPROTO(reset);
 BUILTINPROTO(fsck);
 BUILTINPROTO(show);
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+BUILTINPROTO(sign);
+#endif
 BUILTINPROTO(static_delta);
 BUILTINPROTO(summary);
 BUILTINPROTO(rev_parse);

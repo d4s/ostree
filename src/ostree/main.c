@@ -112,6 +112,11 @@ static OstreeCommand commands[] = {
   { "show", OSTREE_BUILTIN_FLAG_NONE,
     ostree_builtin_show,
     "Output a metadata object" },
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  { "sign", OSTREE_BUILTIN_FLAG_NONE,
+    ostree_builtin_sign,
+    "Sign a commit" },
+#endif
   { "static-delta", OSTREE_BUILTIN_FLAG_NONE,
     ostree_builtin_static_delta,
     "Static delta related commands" },
