@@ -31,6 +31,10 @@
 #include "parse-datetime.h"
 #include "ostree-repo-private.h"
 #include "ostree-libarchive-private.h"
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+#include "ostree-sign.h"
+#include "ostree-sign-dummy.h"
+#endif
 
 static char *opt_subject;
 static char *opt_body;
@@ -60,8 +64,13 @@ static char **opt_trees;
 static gint opt_owner_uid = -1;
 static gint opt_owner_gid = -1;
 static gboolean opt_table_output;
+#if defined(HAVE_GPGME)
 static char **opt_key_ids;
 static char *opt_gpg_homedir;
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+static gboolean opt_sign;
+#endif
 static gboolean opt_generate_sizes;
 static gboolean opt_disable_fsync;
 static char *opt_timestamp;
@@ -114,9 +123,14 @@ static GOptionEntry options[] = {
   { "skip-list", 0, 0, G_OPTION_ARG_FILENAME, &opt_skiplist_file, "File containing list of files to skip", "PATH" },
   { "consume", 0, 0, G_OPTION_ARG_NONE, &opt_consume, "Consume (delete) content after commit (for local directories)", NULL },
   { "table-output", 0, 0, G_OPTION_ARG_NONE, &opt_table_output, "Output more information in a KEY: VALUE format", NULL },
+#if defined(HAVE_GPGME)
   { "gpg-sign", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opt_key_ids, "GPG Key ID to sign the commit with", "KEY-ID"},
   { "gpg-homedir", 0, 0, G_OPTION_ARG_FILENAME, &opt_gpg_homedir, "GPG Homedir to use when looking for keyrings", "HOMEDIR"},
-  { "generate-sizes", 0, 0, G_OPTION_ARG_NONE, &opt_generate_sizes, "Generate size information along with commit metadata", NULL },
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  { "sign", 0, 0, G_OPTION_ARG_NONE, &opt_sign, "Sign the commit", NULL},
+#endif
+   { "generate-sizes", 0, 0, G_OPTION_ARG_NONE, &opt_generate_sizes, "Generate size information along with commit metadata", NULL },
   { "disable-fsync", 0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_NONE, &opt_disable_fsync, "Do not invoke fsync()", NULL },
   { "fsync", 0, 0, G_OPTION_ARG_CALLBACK, parse_fsync_cb, "Specify how to invoke fsync()", "POLICY" },
   { "timestamp", 0, 0, G_OPTION_ARG_STRING, &opt_timestamp, "Override the timestamp of the commit", "TIMESTAMP" },
@@ -813,6 +827,7 @@ ostree_builtin_commit (int argc, char **argv, OstreeCommandInvocation *invocatio
             goto out;
         }
 
+#if defined(HAVE_GPGME)
       if (opt_key_ids)
         {
           char **iter;
@@ -830,6 +845,24 @@ ostree_builtin_commit (int argc, char **argv, OstreeCommandInvocation *invocatio
                 goto out;
             }
         }
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+      if (opt_sign)
+        {
+            // TODO: add signature type selection
+            g_autoptr (OstreeSign) sign = NULL;
+            sign = ostree_sign_get_by_name("dummy");
+            if (sign == NULL)
+              goto out;
+
+            if (!ostree_sign_commit (sign,
+                                     repo,
+                                     commit_checksum,
+                                     cancellable,
+                                     error))
+                goto out;
+         }
+#endif
 
       if (opt_branch)
         ostree_repo_transaction_set_ref (repo, NULL, opt_branch, commit_checksum);

@@ -49,14 +49,6 @@ ostree_sign_dummy_init (OstreeSignDummy *self)
   self->key_id = "key_id";
 }
 
-gboolean ostree_sign_dummy_commit (OstreeSign *self, GError **error)
-{
-  g_message("%s enter", __FUNCTION__);
-  g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
-
-  return TRUE;
-}
-
 gboolean ostree_sign_dummy_data (OstreeSign *self,
                                  GBytes *data,
                                  GBytes **signature,
@@ -101,16 +93,26 @@ gchar * ostree_sign_dummy_metadata_format (OstreeSign *self)
 }
 
 
+gboolean ostree_sign_dummy_metadata_verify (OstreeSign *self,
+                                            GVariant   *metadata,
+                                            GError **error)
+{
+  g_message("%s enter", __FUNCTION__);
+  g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
+
+  return TRUE;
+}
+
 static void
 ostree_sign_dummy_iface_init (OstreeSignInterface *self)
 {
   g_message("%s enter", __FUNCTION__);
 
-  self->commit = ostree_sign_dummy_commit;
   self->data = ostree_sign_dummy_data;
   self->get_name = ostree_sign_dummy_get_name;
   self->metadata_key = ostree_sign_dummy_metadata_key;
-  self->metadata_format= ostree_sign_dummy_metadata_format;
+  self->metadata_format = ostree_sign_dummy_metadata_format;
+  self->metadata_verify = ostree_sign_dummy_metadata_verify;
 }
 
 static void

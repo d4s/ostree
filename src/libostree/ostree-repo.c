@@ -4927,7 +4927,6 @@ ostree_repo_append_gpg_signature (OstreeRepo     *self,
 
   return TRUE;
 }
-#endif /* HAVE_GPGME */
 
 static gboolean
 sign_data (OstreeRepo     *self,
@@ -4938,7 +4937,6 @@ sign_data (OstreeRepo     *self,
            GCancellable   *cancellable,
            GError        **error)
 {
-#if defined(HAVE_GPGME)
   g_auto(GLnxTmpfile) tmpf = { 0, };
   if (!glnx_open_tmpfile_linkable_at (self->tmp_dir_fd, ".", O_RDWR | O_CLOEXEC,
                                       &tmpf, error))
@@ -4989,11 +4987,10 @@ sign_data (OstreeRepo     *self,
   if (out_signature)
     *out_signature = g_mapped_file_get_bytes (signature_file);
   return TRUE;
-#else
   /* FIXME: Return false until refactoring */
   return FALSE;
-#endif /* HAVE_GPGME */
 }
+#endif /* HAVE_GPGME */
 
 /**
  * ostree_repo_sign_commit:

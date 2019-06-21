@@ -65,80 +65,6 @@ delete_signatures (OstreeRepo *repo,
   return TRUE;
 }
 
-//////////////////////////////////////////////////////////////////////
-/**
- * ostree_repo_sign_commit:
- * @self: Self
- * @commit_checksum: SHA256 of given commit to sign
- * @key_id: Use this GPG key id
- * @homedir: (allow-none): GPG home directory, or %NULL
- * @cancellable: A #GCancellable
- * @error: a #GError
- *
- * Add a GPG signature to a commit.
- */
-gboolean
-ostree_repo_sign_commit (OstreeRepo     *self,
-                         const gchar    *commit_checksum,
-                         const gchar    *key_id,
-                         const gchar    *homedir,
-                         GCancellable   *cancellable,
-                         GError        **error)
-{
-  g_autoptr(GBytes) commit_data = NULL;
-  g_autoptr(GBytes) signature = NULL;
-
-  g_autoptr(GVariant) commit_variant = NULL;
-  if (!ostree_repo_load_variant (self, OSTREE_OBJECT_TYPE_COMMIT,
-                                 commit_checksum, &commit_variant, error))
-    return glnx_prefix_error (error, "Failed to read commit");
-
-  g_autoptr(GVariant) old_metadata = NULL;
-  if (!ostree_repo_read_commit_detached_metadata (self,
-                                                  commit_checksum,
-                                                  &old_metadata,
-                                                  cancellable,
-                                                  error))
-    return glnx_prefix_error (error, "Failed to read detached metadata");
-
-  g_autoptr (OstreeSign) sign = ostree_sign_get_by_name("dummy");
-
-  // TODO: d4s: check if already signed
-
-  commit_data = g_variant_get_data_as_bytes (commit_variant);
-
-  /* The verify operation is merely to parse any existing signatures to
-   * check if the commit has already been signed with the given key ID.
-   * We want to avoid storing duplicate signatures in the metadata. We
-   * pass the homedir so that the signing key can be imported, allowing
-   * subkey signatures to be recognised. */
-  g_autoptr(GError) local_error = NULL;
-
-  if (!ostree_sign_data (sign, commit_data, &signature, 
-                         cancellable, error))
-    return FALSE;
-
-  g_autoptr(GVariant) new_metadata =
-    ostree_sign_detached_metadata_append (sign, old_metadata, signature);
-
-  if (new_metadata != NULL)
-    g_print("New metadata: %s\n", g_variant_print(new_metadata, TRUE));
-
-  if (!ostree_repo_write_commit_detached_metadata (self,
-                                                   commit_checksum,
-                                                   new_metadata,
-                                                   cancellable,
-                                                   error))
-    return FALSE;
-
-  return TRUE;
-  /* FIXME: Return false until refactoring */
-
-
-  g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED, "Signing is not implemented");
-  return FALSE;
-}
-
 
 #if defined(__linux__)
 # include <fcntl.h>
@@ -222,8 +148,10 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
     goto out;
 
   /* Initialize crypto system */
-  if (!ostree_repo_sign_init(error))
-    goto out;
+  g_autoptr (OstreeSign) sign = NULL;
+  sign = ostree_sign_get_by_name("dummy");
+  if (sign == NULL)
+      goto out;
 
   if (opt_delete)
     {
@@ -242,8 +170,8 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
 
   for (ii = 0; ii < n_key_ids; ii++)
     {
-      if (!ostree_repo_sign_commit (repo, resolved_commit, key_ids[ii],
-                                    NULL, cancellable, error))
+      if (!ostree_sign_commit (sign, repo, resolved_commit,
+                               cancellable, error))
         goto out;
     }
 

@@ -41,15 +41,6 @@ ostree_sign_default_init (OstreeSignInterface *iface)
   g_message("OstreeSign initialization");
 }
 
-gboolean ostree_sign_commit (OstreeSign *self, GError **error)
-{
-  g_message("%s enter", __FUNCTION__);
-  g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
-  g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->commit != NULL, FALSE);
-
-  return OSTREE_SIGN_GET_IFACE (self)->commit (self, error);
-}
-
 gchar * ostree_sign_metadata_key (OstreeSign *self)
 {
   g_message("%s enter", __FUNCTION__);
@@ -117,6 +108,30 @@ ostree_sign_detached_metadata_append (OstreeSign *self,
 
   return  g_variant_dict_end (&metadata_dict);
 }
+
+
+gboolean
+ostree_sign_metadata_verify (OstreeSign *self,
+                             GVariant   *metadata,
+                             GError **error)
+{
+  g_message("%s enter", __FUNCTION__);
+  g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
+  g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->metadata_verify != NULL, FALSE);
+
+  g_autoptr(GVariant) signature_data = NULL;
+
+  g_autofree gchar *signature_key = ostree_sign_metadata_key(self);
+  g_autofree GVariantType *signature_format = (GVariantType *) ostree_sign_metadata_format(self);
+
+  if (metadata)
+    signature_data = g_variant_lookup_value (metadata,
+                                        signature_key,
+                                        signature_format);
+
+  return OSTREE_SIGN_GET_IFACE (self)->metadata_verify(self, metadata, error);
+}
+
 
 /*
 gboolean
@@ -202,3 +217,64 @@ OstreeSign * ostree_sign_get_by_name (const gchar *name)
 
   return ret;
 }
+
+
+/**
+ * ostree_repo_sign_commit:
+ * @self: Self
+ * @commit_checksum: SHA256 of given commit to sign
+ * @cancellable: A #GCancellable
+ * @error: a #GError
+ *
+ * Add a GPG signature to a commit.
+ */
+gboolean
+ostree_sign_commit (OstreeSign     *self,
+                    OstreeRepo     *repo,
+                    const gchar    *commit_checksum,
+                    GCancellable   *cancellable,
+                    GError         **error)
+{
+  g_message("%s enter", __FUNCTION__);
+
+  g_autoptr(GBytes) commit_data = NULL;
+  g_autoptr(GBytes) signature = NULL;
+
+  g_autoptr(GVariant) commit_variant = NULL;
+  if (!ostree_repo_load_variant (repo, OSTREE_OBJECT_TYPE_COMMIT,
+                                 commit_checksum, &commit_variant, error))
+    return glnx_prefix_error (error, "Failed to read commit");
+
+  g_autoptr(GVariant) old_metadata = NULL;
+  if (!ostree_repo_read_commit_detached_metadata (repo,
+                                                  commit_checksum,
+                                                  &old_metadata,
+                                                  cancellable,
+                                                  error))
+    return glnx_prefix_error (error, "Failed to read detached metadata");
+
+  // TODO: d4s: check if already signed?
+
+  commit_data = g_variant_get_data_as_bytes (commit_variant);
+
+  if (!ostree_sign_data (self, commit_data, &signature,
+                         cancellable, error))
+    return FALSE;
+
+  g_autoptr(GVariant) new_metadata =
+    ostree_sign_detached_metadata_append (self, old_metadata, signature);
+
+  if (new_metadata != NULL)
+    g_print("New metadata: %s\n", g_variant_print(new_metadata, TRUE));
+
+  if (!ostree_repo_write_commit_detached_metadata (repo,
+                                                   commit_checksum,
+                                                   new_metadata,
+                                                   cancellable,
+                                                   error))
+    return FALSE;
+
+  return TRUE;
+}
+
+

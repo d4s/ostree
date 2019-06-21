@@ -42,7 +42,6 @@ struct _OstreeSignInterface
 {
   GTypeInterface g_iface;
   gchar *(* get_name) (OstreeSign *self);
-  gboolean (* commit) (OstreeSign *self, GError **error);
   gboolean (* data)   (OstreeSign *self,
                        GBytes *data,
                        GBytes **signature,
@@ -50,6 +49,10 @@ struct _OstreeSignInterface
                        GError **error);
   gchar *(* metadata_key) (OstreeSign *self);
   gchar *(* metadata_format) (OstreeSign *self);
+  gboolean (* metadata_verify) (OstreeSign *self,
+                              GVariant   *metadata,
+                              GError **error);
+
 /*
   gboolean (* commit_verify) (OstreeSign *self, GError **error);
   gboolean (* commit_delete_signature) (OstreeSign *self, GError **error);
@@ -61,9 +64,6 @@ struct _OstreeSignInterface
 
 _OSTREE_PUBLIC
 gchar * ostree_sign_get_name (OstreeSign *self);
-
-_OSTREE_PUBLIC
-gboolean ostree_sign_commit (OstreeSign *self, GError **error);
 
 _OSTREE_PUBLIC
 gboolean ostree_sign_data (OstreeSign *self,
@@ -92,6 +92,18 @@ GVariant * ostree_sign_detached_metadata_append (OstreeSign *self,
  */
 _OSTREE_PUBLIC
 OstreeSign * ostree_sign_get_by_name (const gchar *name);
+
+_OSTREE_PUBLIC
+gboolean ostree_sign_metadata_verify (OstreeSign *self,
+                                      GVariant   *metadata,
+                                      GError **error);
+
+_OSTREE_PUBLIC
+gboolean ostree_sign_commit (OstreeSign     *self,
+                             OstreeRepo     *repo,
+                             const gchar    *commit_checksum,
+                             GCancellable   *cancellable,
+                             GError         **error);
 
 /*
 _OSTREE_PUBLIC

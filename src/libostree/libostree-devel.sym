@@ -44,6 +44,7 @@ global:
   ostree_sign_get_by_name;
   ostree_sign_dummy_get_type;
   ostree_sign_detached_metadata_append;
+  ostree_sign_metadata_verify;
 } LIBOSTREE_2018.9;
 
 /* Stub section for the stable release *after* this development one; don't
