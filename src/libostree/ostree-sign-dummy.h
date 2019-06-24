@@ -1,3 +1,5 @@
+/* vim:set et sw=2 cin cino=t0,f0,(0,{s,>2s,n-s,^-s,e2s: */
+
 /*
  * Copyright © 2019 Collabora Ltd.
  *
@@ -49,9 +51,12 @@ gchar * ostree_sign_dummy_metadata_key (OstreeSign *self);
 gchar * ostree_sign_dummy_metadata_format (OstreeSign *self);
 
 gboolean ostree_sign_dummy_metadata_verify (OstreeSign *self,
-                                            GVariant   *metadata,
-                                            GError **error);
+                                            GBytes     *data,
+                                            GVariant   *signatures,
+                                            GError     **error);
 
+_OSTREE_PUBLIC
+void ostree_sign_dummy_set_signature (OstreeSign *self, gchar *signature);
 
 G_END_DECLS
 

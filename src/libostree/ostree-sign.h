@@ -1,3 +1,5 @@
+/* vim:set et sw=2 cin cino=t0,f0,(0,{s,>2s,n-s,^-s,e2s: */
+
 /*
  * Copyright © 2019 Collabora Ltd.
  *
@@ -50,8 +52,9 @@ struct _OstreeSignInterface
   gchar *(* metadata_key) (OstreeSign *self);
   gchar *(* metadata_format) (OstreeSign *self);
   gboolean (* metadata_verify) (OstreeSign *self,
-                              GVariant   *metadata,
-                              GError **error);
+                                GBytes *data,
+                                GVariant   *metadata,
+                                GError **error);
 
 /*
   gboolean (* commit_verify) (OstreeSign *self, GError **error);
@@ -63,7 +66,7 @@ struct _OstreeSignInterface
 };
 
 _OSTREE_PUBLIC
-gchar * ostree_sign_get_name (OstreeSign *self);
+const gchar * ostree_sign_get_name (OstreeSign *self);
 
 _OSTREE_PUBLIC
 gboolean ostree_sign_data (OstreeSign *self,
@@ -94,21 +97,27 @@ _OSTREE_PUBLIC
 OstreeSign * ostree_sign_get_by_name (const gchar *name);
 
 _OSTREE_PUBLIC
-gboolean ostree_sign_metadata_verify (OstreeSign *self,
-                                      GVariant   *metadata,
-                                      GError **error);
-
-_OSTREE_PUBLIC
 gboolean ostree_sign_commit (OstreeSign     *self,
                              OstreeRepo     *repo,
                              const gchar    *commit_checksum,
                              GCancellable   *cancellable,
                              GError         **error);
 
-/*
 _OSTREE_PUBLIC
-gboolean ostree_sign_commit_verify (OstreeSign *self, GError **error);
+gboolean ostree_sign_metadata_verify (OstreeSign *self,
+                                      GBytes     *data,
+                                      GVariant   *signatures,
+                                      GError     **error);
 
+_OSTREE_PUBLIC
+gboolean ostree_sign_commit_verify (OstreeSign *self,
+                                    OstreeRepo     *repo,
+                                    const gchar    *commit_checksum,
+                                    GCancellable   *cancellable,
+                                    GError         **error);
+
+
+/*
 _OSTREE_PUBLIC
 gboolean ostree_sign_commit_delete_signature (OstreeSign *self, GError **error);
 

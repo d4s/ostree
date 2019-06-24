@@ -1,3 +1,5 @@
+/* vim:set et sw=2 cin cino=t0,f0,(0,{s,>2s,n-s,^-s,e2s: */
+
 /*
  * Copyright (C) 2015 Colin Walters <walters@verbum.org>
  *
@@ -32,6 +34,7 @@
 #include "ostree-sign-dummy.h"
 
 static gboolean opt_delete;
+static gboolean opt_verify;
 
 /* ATTENTION:
  * Please remember to update the bash-completion script (bash/ostree) and
@@ -39,7 +42,10 @@ static gboolean opt_delete;
  */
 
 static GOptionEntry options[] = {
-  { "delete", 'd', 0, G_OPTION_ARG_NONE, &opt_delete, "Delete signatures having any of the KEY-IDs" },
+  { "delete", 'd', 0, G_OPTION_ARG_NONE, &opt_delete, "Delete signatures having any of the KEY-IDs", NULL},
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  { "verify", 0, 0, G_OPTION_ARG_NONE, &opt_verify, "Verify signatures", NULL},
+#endif
 #if defined(HAVE_LIBSODIUM)
 #endif
    { NULL }
@@ -116,6 +122,7 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
 {
   g_autoptr(GOptionContext) context = NULL;
   g_autoptr(OstreeRepo) repo = NULL;
+  g_autoptr (OstreeSign) sign = NULL;
   g_autofree char *resolved_commit = NULL;
   const char *commit;
   char **key_ids;
@@ -130,17 +137,18 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
 
   if (argc < 2)
     {
-      usage_error (context, "Need a COMMIT to sign", error);
+      usage_error (context, "Need a COMMIT to sign or verify", error);
       goto out;
     }
 
-  if (argc < 3)
+  commit = argv[1];
+
+  if (!opt_verify && argc < 3)
     {
       usage_error (context, "Need at least one KEY-ID to sign with", error);
       goto out;
     }
 
-  commit = argv[1];
   key_ids = argv + 2;
   n_key_ids = argc - 2;
 
@@ -148,10 +156,12 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
     goto out;
 
   /* Initialize crypto system */
-  g_autoptr (OstreeSign) sign = NULL;
   sign = ostree_sign_get_by_name("dummy");
   if (sign == NULL)
+    {
+      ret = FALSE;
       goto out;
+    }
 
   if (opt_delete)
     {
@@ -168,8 +178,22 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
       goto out;
     }
 
+  if (opt_verify)
+    {
+      ret = ostree_sign_commit_verify (sign,
+                                       repo,
+                                       resolved_commit,
+                                       cancellable,
+                                       error);
+      goto out;
+    }
+
   for (ii = 0; ii < n_key_ids; ii++)
     {
+      if (!g_strcmp0(ostree_sign_get_name(sign), "dummy"))
+          // Just use the string as signature
+          ostree_sign_dummy_set_signature(sign, key_ids[ii]);
+
       if (!ostree_sign_commit (sign, repo, resolved_commit,
                                cancellable, error))
         goto out;

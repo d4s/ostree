@@ -1,3 +1,5 @@
+/* vim:set et sw=2 cin cino=t0,f0,(0,{s,>2s,n-s,^-s,e2s: */
+
 /*
  * Copyright © 2019 Collabora Ltd.
  *
@@ -33,17 +35,19 @@
 #include "ostree-sign.h"
 #include "ostree-sign-dummy.h"
 
+#define G_LOG_DOMAIN "OSTreeSign"
+
 G_DEFINE_INTERFACE (OstreeSign, ostree_sign, G_TYPE_OBJECT)
 
 static void
 ostree_sign_default_init (OstreeSignInterface *iface)
 {
-  g_message("OstreeSign initialization");
+  g_debug ("OstreeSign initialization");
 }
 
 gchar * ostree_sign_metadata_key (OstreeSign *self)
 {
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
 
   g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->metadata_key != NULL, NULL);
   return OSTREE_SIGN_GET_IFACE (self)->metadata_key (self);
@@ -51,7 +55,7 @@ gchar * ostree_sign_metadata_key (OstreeSign *self)
 
 gchar * ostree_sign_metadata_format (OstreeSign *self)
 {
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
 
   g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->metadata_format != NULL, NULL);
   return OSTREE_SIGN_GET_IFACE (self)->metadata_format (self);
@@ -65,7 +69,7 @@ gboolean ostree_sign_data (OstreeSign *self,
                            GError **error)
 {
 
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
   g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
   g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->data != NULL, FALSE);
 
@@ -80,7 +84,7 @@ ostree_sign_detached_metadata_append (OstreeSign *self,
                                       GVariant   *existing_metadata,
                                       GBytes     *signature_bytes)
 {
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
   if (existing_metadata != NULL)
     g_print("%s", g_variant_print(existing_metadata, TRUE));
 
@@ -112,42 +116,76 @@ ostree_sign_detached_metadata_append (OstreeSign *self,
 
 gboolean
 ostree_sign_metadata_verify (OstreeSign *self,
-                             GVariant   *metadata,
-                             GError **error)
+                             GBytes     *data,
+                             GVariant   *signatures,
+                             GError     **error)
 {
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
   g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
   g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->metadata_verify != NULL, FALSE);
 
-  g_autoptr(GVariant) signature_data = NULL;
+  return OSTREE_SIGN_GET_IFACE (self)->metadata_verify(self, data, signatures, error);
+}
+
+gboolean
+ostree_sign_commit_verify (OstreeSign     *self,
+                           OstreeRepo     *repo,
+                           const gchar    *commit_checksum,
+                           GCancellable   *cancellable,
+                           GError         **error)
+
+{
+  g_debug ("%s enter", __FUNCTION__);
+  g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
+
+  g_autoptr(GVariant) commit_variant = NULL;
+  /* Load the commit */
+  if (!ostree_repo_load_variant (repo, OSTREE_OBJECT_TYPE_COMMIT,
+                                 commit_checksum, &commit_variant,
+                                 error))
+    return glnx_prefix_error (error, "Failed to read commit");
+
+  /* Load the metadata */
+  g_autoptr(GVariant) metadata = NULL;
+  if (!ostree_repo_read_commit_detached_metadata (repo,
+                                                  commit_checksum,
+                                                  &metadata,
+                                                  cancellable,
+                                                  error))
+    return glnx_prefix_error (error, "Failed to read detached metadata");
+
+  g_autoptr(GBytes) signed_data = g_variant_get_data_as_bytes (commit_variant);
+
+  /* XXX This is a hackish way to indicate to use ALL remote-specific
+   *     keyrings in the signature verification.  We want this when
+   *     verifying a signed commit that's already been pulled. */
+/*
+  if (remote_name == NULL)
+    remote_name = OSTREE_ALL_REMOTES;
+*/
+
+  g_autoptr(GVariant) signatures = NULL;
 
   g_autofree gchar *signature_key = ostree_sign_metadata_key(self);
   g_autofree GVariantType *signature_format = (GVariantType *) ostree_sign_metadata_format(self);
 
   if (metadata)
-    signature_data = g_variant_lookup_value (metadata,
-                                        signature_key,
-                                        signature_format);
+    signatures = g_variant_lookup_value (metadata,
+                                         signature_key,
+                                         signature_format);
 
-  return OSTREE_SIGN_GET_IFACE (self)->metadata_verify(self, metadata, error);
+
+  return ostree_sign_metadata_verify (self,
+                                      signed_data,
+                                      signatures,
+                                      error);
 }
-
 
 /*
 gboolean
-ostree_sign_commit_verify (OstreeSign *self, GError **error)
-{
-    g_message("%s enter", __FUNCTION__);
-    g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
-    g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->commit_verify != NULL, FALSE);
-
-    return OSTREE_SIGN_GET_IFACE (self)->commit_verify(self, error);
-}
-
-gboolean
 ostree_sign_commit_delete_signature (OstreeSign *self, GError **error)
 {
-    g_message("%s enter", __FUNCTION__);
+    g_debug ("%s enter", __FUNCTION__);
     g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
     g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->commit_delete_signature != NULL, FALSE);
 
@@ -157,7 +195,7 @@ ostree_sign_commit_delete_signature (OstreeSign *self, GError **error)
 gboolean
 ostree_sign_commit_print_signature (OstreeSign *self, GError **error)
 {
-    g_message("%s enter", __FUNCTION__);
+    g_debug ("%s enter", __FUNCTION__);
     g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
     g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->commit_print_signature != NULL, FALSE);
 
@@ -167,7 +205,7 @@ ostree_sign_commit_print_signature (OstreeSign *self, GError **error)
 gboolean
 ostree_sign_summary (OstreeSign *self, GError **error)
 {
-    g_message("%s enter", __FUNCTION__);
+    g_debug ("%s enter", __FUNCTION__);
     g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
     g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->summary != NULL, FALSE);
 
@@ -177,7 +215,7 @@ ostree_sign_summary (OstreeSign *self, GError **error)
 gboolean
 ostree_sign_summary_verify (OstreeSign *self, GError **error)
 {
-    g_message("%s enter", __FUNCTION__);
+    g_debug ("%s enter", __FUNCTION__);
     g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
     g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->summary_verify != NULL, FALSE);
 
@@ -185,9 +223,9 @@ ostree_sign_summary_verify (OstreeSign *self, GError **error)
 }
 */
 
-gchar * ostree_sign_get_name (OstreeSign *self)
+const gchar * ostree_sign_get_name (OstreeSign *self)
 {
-    g_message("%s enter", __FUNCTION__);
+    g_debug ("%s enter", __FUNCTION__);
     g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
     g_return_val_if_fail (OSTREE_SIGN_GET_IFACE (self)->get_name != NULL, FALSE);
 
@@ -196,7 +234,7 @@ gchar * ostree_sign_get_name (OstreeSign *self)
 
 OstreeSign * ostree_sign_get_by_name (const gchar *name)
 {
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
 
   GType types [] = { OSTREE_TYPE_SIGN_DUMMY };
   OstreeSign *ret = NULL;
@@ -206,7 +244,7 @@ OstreeSign * ostree_sign_get_by_name (const gchar *name)
     g_autoptr (OstreeSign) sign = g_object_new (types[i], NULL);
     g_autofree gchar *sign_name = OSTREE_SIGN_GET_IFACE (sign)->get_name(sign);
 
-    g_message("Found '%s' signing module", sign_name);
+    g_debug ("Found '%s' signing module", sign_name);
 
     if (g_strcmp0 (name, sign_name) == 0)
     {
@@ -220,7 +258,7 @@ OstreeSign * ostree_sign_get_by_name (const gchar *name)
 
 
 /**
- * ostree_repo_sign_commit:
+ * ostree_sign_commit:
  * @self: Self
  * @commit_checksum: SHA256 of given commit to sign
  * @cancellable: A #GCancellable
@@ -235,7 +273,7 @@ ostree_sign_commit (OstreeSign     *self,
                     GCancellable   *cancellable,
                     GError         **error)
 {
-  g_message("%s enter", __FUNCTION__);
+  g_debug ("%s enter", __FUNCTION__);
 
   g_autoptr(GBytes) commit_data = NULL;
   g_autoptr(GBytes) signature = NULL;

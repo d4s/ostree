@@ -1,3 +1,5 @@
+/* vim:set et sw=2 cin cino=t0,f0,(0,{s,>2s,n-s,^-s,e2s: */
+
 /*
  * Copyright (C) 2011,2012,2013 Colin Walters <walters@verbum.org>
  * Copyright © 2017 Endless Mobile, Inc.
@@ -52,6 +54,10 @@
 #include <sys/statvfs.h>
 #ifdef HAVE_LIBSYSTEMD
 #include <systemd/sd-journal.h>
+#endif
+
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+#include "ostree-sign.h"
 #endif
 
 #define OSTREE_MESSAGE_FETCH_COMPLETE_ID SD_ID128_MAKE(75,ba,3d,eb,0a,f0,41,a9,a4,62,72,ff,85,d9,e7,3e)
@@ -260,16 +266,14 @@ static gboolean scan_one_metadata_object (OtPullData                 *pull_data,
                                           GCancellable               *cancellable,
                                           GError                    **error);
 static void scan_object_queue_data_free (ScanObjectQueueData *scan_data);
-#if defined(HAVE_GPGME)
 static gboolean
-gpg_verify_unwritten_commit (OtPullData                 *pull_data,
+sign_verify_unwritten_commit (OtPullData                 *pull_data,
                              const char                 *checksum,
                              GVariant                   *commit,
                              GVariant                   *detached_metadata,
                              const OstreeCollectionRef  *ref,
                              GCancellable               *cancellable,
                              GError                    **error);
-#endif /* HAVE_GPGME */
 
 static gboolean
 update_progress (gpointer user_data)
@@ -1295,25 +1299,23 @@ meta_fetch_on_complete (GObject           *object,
       if (!_ostree_verify_metadata_object (objtype, checksum, metadata, error))
         goto out;
 
-      /* For commit objects, check the GPG signature before writing to the repo,
+      /* For commit objects, check the signature before writing to the repo,
        * and also write the .commitpartial to say that we're still processing
        * this commit.
        */
       if (objtype == OSTREE_OBJECT_TYPE_COMMIT)
         {
-#if defined(HAVE_GPGME)
-          /* Do GPG verification. `detached_data` may be NULL if no detached
+          /* Do signature verification. `detached_data` may be NULL if no detached
            * metadata was found during pull; that's handled by
-           * gpg_verify_unwritten_commit(). If we ever change the pull code to
+           * ostree_sign_verify_unwritten_commit(). If we ever change the pull code to
            * not always fetch detached metadata, this bit will have to learn how
            * to look up from the disk state as well, or insert the on-disk
            * metadata into this hash.
            */
           GVariant *detached_data = g_hash_table_lookup (pull_data->fetched_detached_metadata, checksum);
-          if (!gpg_verify_unwritten_commit (pull_data, checksum, metadata, detached_data,
+          if (!sign_verify_unwritten_commit (pull_data, checksum, metadata, detached_data,
                                             fetch_data->requested_ref, pull_data->cancellable, error))
             goto out;
-#endif /* HAVE_GPGME */
 
           if (!ostree_repo_mark_commit_partial (pull_data->repo, checksum, TRUE, error))
             goto out;
@@ -1466,16 +1468,18 @@ process_verify_result (OtPullData            *pull_data,
 
   return TRUE;
 }
+#endif /* HAVE_GPGME */
 
 static gboolean
-gpg_verify_unwritten_commit (OtPullData                 *pull_data,
-                             const char                 *checksum,
-                             GVariant                   *commit,
-                             GVariant                   *detached_metadata,
-                             const OstreeCollectionRef  *ref,
-                             GCancellable               *cancellable,
-                             GError                    **error)
+sign_verify_unwritten_commit (OtPullData                 *pull_data,
+                              const char                 *checksum,
+                              GVariant                   *commit,
+                              GVariant                   *detached_metadata,
+                              const OstreeCollectionRef  *ref,
+                              GCancellable               *cancellable,
+                              GError                    **error)
 {
+#if defined(HAVE_GPGME)
   if (pull_data->gpg_verify)
     {
       const char *keyring_remote = NULL;
@@ -1498,10 +1502,32 @@ gpg_verify_unwritten_commit (OtPullData                 *pull_data,
       if (!process_verify_result (pull_data, checksum, result, error))
         return FALSE;
     }
+#endif /* HAVE_GPGME */
 
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  // TODO: read from config
+  g_autoptr (OstreeSign) sign = ostree_sign_get_by_name ("dummy");
+  g_autoptr(GVariant) signatures = NULL;
+  g_autofree gchar *signature_key = ostree_sign_metadata_key (sign);
+  g_autofree GVariantType *signature_format = (GVariantType *) ostree_sign_metadata_format (sign);
+
+  if (detached_metadata)
+    {
+      signatures = g_variant_lookup_value (detached_metadata,
+                                           signature_key,
+                                           signature_format);
+
+      g_autoptr(GBytes) signed_data = g_variant_get_data_as_bytes (commit);
+
+      return ostree_sign_metadata_verify (sign,
+                                          signed_data,
+                                          signatures,
+                                          error
+                                         );
+    }
+#endif
   return TRUE;
 }
-#endif /* HAVE_GPGME */
 
 static gboolean
 commitstate_is_partial (OtPullData   *pull_data,
@@ -2410,11 +2436,9 @@ process_one_static_delta (OtPullData                 *pull_data,
           g_autofree char *detached_path = _ostree_get_relative_static_delta_path (from_revision, to_revision, "commitmeta");
           g_autoptr(GVariant) detached_data = g_variant_lookup_value (metadata, detached_path, G_VARIANT_TYPE("a{sv}"));
 
-#if defined(HAVE_GPGME)
-          if (!gpg_verify_unwritten_commit (pull_data, to_revision, to_commit, detached_data,
+          if (!sign_verify_unwritten_commit (pull_data, to_revision, to_commit, detached_data,
                                             ref, cancellable, error))
             return FALSE;
-#endif /* HAVE_GPGME */
 
           if (detached_data && !ostree_repo_write_commit_detached_metadata (pull_data->repo,
                                                                             to_revision,
