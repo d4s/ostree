@@ -109,10 +109,15 @@ typedef struct {
   }             phase;
   gint          n_scanned_metadata;
 
+#if defined(HAVE_GPGME)
   gboolean          gpg_verify;
+  gboolean          gpg_verify_summary;
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  gboolean          sign_verify;
+#endif
   gboolean          require_static_deltas;
   gboolean          disable_static_deltas;
-  gboolean          gpg_verify_summary;
   gboolean          has_tombstone_commits;
 
   GBytes           *summary_data;
@@ -120,7 +125,7 @@ typedef struct {
   GVariant         *summary;
   GHashTable       *summary_deltas_checksums;
   GHashTable       *ref_original_commits; /* Maps checksum to commit, used by timestamp checks */
-  GHashTable       *gpg_verified_commits; /* Set<checksum> of commits that have been verified */
+  GHashTable       *verified_commits; /* Set<checksum> of commits that have been verified */
   GHashTable       *ref_keyring_map; /* Maps OstreeCollectionRef to keyring remote name */
   GPtrArray        *static_delta_superblocks;
   GHashTable       *expected_commit_sizes; /* Maps commit checksum to known size */
@@ -1464,7 +1469,7 @@ process_verify_result (OtPullData            *pull_data,
    * the case of "written but not verified". But we also don't want to check
    * twice, as that'd result in duplicate signals.
    */
-  g_hash_table_add (pull_data->gpg_verified_commits, g_strdup (checksum));
+  g_hash_table_add (pull_data->verified_commits, g_strdup (checksum));
 
   return TRUE;
 }
@@ -1485,7 +1490,7 @@ sign_verify_unwritten_commit (OtPullData                 *pull_data,
       const char *keyring_remote = NULL;
 
       /* Shouldn't happen, but see comment in process_verify_result() */
-      if (g_hash_table_contains (pull_data->gpg_verified_commits, checksum))
+      if (g_hash_table_contains (pull_data->verified_commits, checksum))
         return TRUE;
 
       if (ref != NULL)
@@ -1505,25 +1510,33 @@ sign_verify_unwritten_commit (OtPullData                 *pull_data,
 #endif /* HAVE_GPGME */
 
 #if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
-  // TODO: read from config
-  g_autoptr (OstreeSign) sign = ostree_sign_get_by_name ("dummy");
-  g_autoptr(GVariant) signatures = NULL;
-  g_autofree gchar *signature_key = ostree_sign_metadata_key (sign);
-  g_autofree GVariantType *signature_format = (GVariantType *) ostree_sign_metadata_format (sign);
-
-  if (detached_metadata)
+  if (detached_metadata != NULL)
     {
-      signatures = g_variant_lookup_value (detached_metadata,
-                                           signature_key,
-                                           signature_format);
-
+      gboolean ret = FALSE;
       g_autoptr(GBytes) signed_data = g_variant_get_data_as_bytes (commit);
+      /* list all signature types in detached metadata and check if signed by any? */
+      GStrv names = ostree_sign_list_names();
+      for (guint i=0; i < g_strv_length (names); i++)
+        {
+          g_autoptr (OstreeSign) sign = ostree_sign_get_by_name (names[i]);
+          g_autoptr(GVariant) signatures = NULL;
+          g_autofree gchar *signature_key = ostree_sign_metadata_key (sign);
+          g_autofree GVariantType *signature_format = (GVariantType *) ostree_sign_metadata_format (sign);
 
-      return ostree_sign_metadata_verify (sign,
-                                          signed_data,
-                                          signatures,
-                                          error
-                                         );
+          signatures = g_variant_lookup_value (detached_metadata,
+                                               signature_key,
+                                               signature_format);
+
+          /* Set return to true if any sign fit */
+          if (ostree_sign_metadata_verify (sign,
+                                           signed_data,
+                                           signatures,
+                                           error
+                                          ))
+            ret = TRUE;
+        }
+      g_strfreev(names);
+      return ret;
     }
 #endif
   return TRUE;
@@ -1830,7 +1843,7 @@ scan_commit_object (OtPullData                 *pull_data,
    * but also ensure we've done it here if not already.
    */
   if (pull_data->gpg_verify &&
-      !g_hash_table_contains (pull_data->gpg_verified_commits, checksum))
+      !g_hash_table_contains (pull_data->verified_commits, checksum))
     {
       g_autoptr(OstreeGpgVerifyResult) result = NULL;
       const char *keyring_remote = NULL;
@@ -1849,6 +1862,29 @@ scan_commit_object (OtPullData                 *pull_data,
         return FALSE;
     }
 #endif /* HAVE_GPGME */
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  if (pull_data->sign_verify &&
+      !g_hash_table_contains (pull_data->verified_commits, checksum))
+    {
+      gboolean ret = FALSE;
+      /* list all signature types in detached metadata and check if signed by any? */
+      GStrv names = ostree_sign_list_names();
+      for (guint i=0; i < g_strv_length (names); i++)
+        {
+          g_autoptr (OstreeSign) sign = ostree_sign_get_by_name (names[i]);
+
+          if (ostree_sign_commit_verify (sign,
+                                         pull_data->repo,
+                                         checksum,
+                                         cancellable,
+                                         error))
+            ret = TRUE;
+        }
+      g_strfreev(names);
+      if (ret == FALSE)
+        return FALSE;
+    }
+#endif
 
   /* If we found a legacy transaction flag, assume we have to scan.
    * We always do a scan of dirtree objects; see
@@ -3597,8 +3633,13 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
   g_autoptr(GVariantIter) collection_refs_iter = NULL;
   g_autofree char **override_commit_ids = NULL;
   GSource *update_timeout = NULL;
+#if defined(HAVE_GPGME)
   gboolean opt_gpg_verify_set = FALSE;
   gboolean opt_gpg_verify_summary_set = FALSE;
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+  gboolean opt_sign_verify_set = FALSE;
+#endif
   gboolean opt_collection_refs_set = FALSE;
   gboolean opt_n_network_retries_set = FALSE;
   gboolean opt_ref_keyring_map_set = FALSE;
@@ -3629,10 +3670,16 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
       (void) g_variant_lookup (options, "subdir", "&s", &dir_to_pull);
       (void) g_variant_lookup (options, "subdirs", "^a&s", &dirs_to_pull);
       (void) g_variant_lookup (options, "override-remote-name", "s", &pull_data->remote_refspec_name);
+#if defined(HAVE_GPGME)
       opt_gpg_verify_set =
         g_variant_lookup (options, "gpg-verify", "b", &pull_data->gpg_verify);
       opt_gpg_verify_summary_set =
         g_variant_lookup (options, "gpg-verify-summary", "b", &pull_data->gpg_verify_summary);
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+      opt_sign_verify_set =
+        g_variant_lookup (options, "sign-verify", "b", &pull_data->sign_verify);
+ #endif
       (void) g_variant_lookup (options, "depth", "i", &pull_data->maxdepth);
       (void) g_variant_lookup (options, "disable-static-deltas", "b", &pull_data->disable_static_deltas);
       (void) g_variant_lookup (options, "require-static-deltas", "b", &pull_data->require_static_deltas);
@@ -3708,8 +3755,8 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
   pull_data->ref_original_commits = g_hash_table_new_full (ostree_collection_ref_hash, ostree_collection_ref_equal,
                                                            (GDestroyNotify)NULL,
                                                            (GDestroyNotify)g_free);
-  pull_data->gpg_verified_commits = g_hash_table_new_full (g_str_hash, g_str_equal,
-                                                           (GDestroyNotify)g_free, NULL);
+  pull_data->verified_commits = g_hash_table_new_full (g_str_hash, g_str_equal,
+                                                       (GDestroyNotify)g_free, NULL);
   pull_data->ref_keyring_map = g_hash_table_new_full (ostree_collection_ref_hash, ostree_collection_ref_equal,
                                                       (GDestroyNotify)ostree_collection_ref_free, (GDestroyNotify)g_free);
   pull_data->scanned_metadata = g_hash_table_new_full (ostree_hash_object_name, g_variant_equal,
@@ -3764,18 +3811,23 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
 
   if (_ostree_repo_remote_name_is_file (remote_name_or_baseurl))
     {
-#if defined(HAVE_GPGME)
       /* For compatibility with pull-local, don't gpg verify local
        * pulls by default.
        */
-      if ((pull_data->gpg_verify || pull_data->gpg_verify_summary) &&
+      if ((
+#if defined(HAVE_GPGME)
+           pull_data->gpg_verify || pull_data->gpg_verify_summary ||
+#endif /* HAVE_GPGME */
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+           pull_data->sign_verify ||
+#endif /* HAVE_GPGME */
+           FALSE) &&
           pull_data->remote_name == NULL)
         {
           g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
                        "Must specify remote name to enable gpg verification");
           goto out;
         }
-#endif /* HAVE_GPGME */
     }
   else
     {
@@ -3797,7 +3849,11 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
                                                         &pull_data->gpg_verify_summary, error))
           goto out;
 #endif /* HAVE_GPGME */
-
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+      /* TODO: read option for remote. */
+      if (!opt_sign_verify_set)
+        opt_sign_verify_set = TRUE;
+#endif
       /* NOTE: If changing this, see the matching implementation in
        * ostree-sysroot-upgrader.c
        */
@@ -4658,19 +4714,26 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
         g_string_append_printf (msg, "libostree pull from '%s' for %u refs complete",
                                 pull_data->remote_name, g_hash_table_size (requested_refs_to_fetch));
 
-      const char *gpg_verify_state;
+      const char *verify_state;
 #if defined(HAVE_GPGME)
       if (pull_data->gpg_verify_summary)
         {
           if (pull_data->gpg_verify)
-            gpg_verify_state = "summary+commit";
+            verify_state = "summary+commit";
           else
-            gpg_verify_state = "summary-only";
+            verify_state = "summary-only";
         }
       else
+        verify_state = (pull_data->gpg_verify ? "commit" : "disabled");
+      g_string_append_printf (msg, "\nsecurity: GPG: %s ", verify_state);
 #endif /* HAVE_GPGME */
-        gpg_verify_state = (pull_data->gpg_verify ? "commit" : "disabled");
-      g_string_append_printf (msg, "\nsecurity: GPG: %s ", gpg_verify_state);
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+      verify_state = (pull_data->sign_verify ? "commit" : "disabled");
+      g_string_append_printf (msg, "\nsecurity: SIGN: %s ", verify_state);
+#elif ! defined(HAVE_GPGME)
+      verify_state = "disabled";
+      g_string_append_printf (msg, "\nsecurity: %s ", verify_state);
+#endif
       OstreeFetcherURI *first_uri = pull_data->meta_mirrorlist->pdata[0];
       g_autofree char *first_scheme = _ostree_fetcher_uri_get_scheme (first_uri);
       if (g_str_has_prefix (first_scheme, "http"))
@@ -4705,7 +4768,12 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
       ot_journal_send ("MESSAGE=%s", msg->str,
                        "MESSAGE_ID=" SD_ID128_FORMAT_STR, SD_ID128_FORMAT_VAL(OSTREE_MESSAGE_FETCH_COMPLETE_ID),
                        "OSTREE_REMOTE=%s", pull_data->remote_name,
-                       "OSTREE_GPG=%s", gpg_verify_state,
+#if defined(HAVE_GPGME)
+                       "OSTREE_GPG=%s", verify_state,
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+                       "OSTREE_SIGN=%s", verify_state,
+#endif
                        "OSTREE_SECONDS=%u", n_seconds,
                        "OSTREE_XFER_SIZE=%s", formatted_xferred,
                        NULL);
@@ -4765,7 +4833,7 @@ ostree_repo_pull_with_options (OstreeRepo             *self,
   g_clear_pointer (&pull_data->fetched_detached_metadata, (GDestroyNotify) g_hash_table_unref);
   g_clear_pointer (&pull_data->summary_deltas_checksums, (GDestroyNotify) g_hash_table_unref);
   g_clear_pointer (&pull_data->ref_original_commits, (GDestroyNotify) g_hash_table_unref);
-  g_clear_pointer (&pull_data->gpg_verified_commits, (GDestroyNotify) g_hash_table_unref);
+  g_clear_pointer (&pull_data->verified_commits, (GDestroyNotify) g_hash_table_unref);
   g_clear_pointer (&pull_data->ref_keyring_map, (GDestroyNotify) g_hash_table_unref);
   g_clear_pointer (&pull_data->requested_content, (GDestroyNotify) g_hash_table_unref);
   g_clear_pointer (&pull_data->requested_fallback_content, (GDestroyNotify) g_hash_table_unref);
@@ -5593,7 +5661,8 @@ find_remotes_cb (GObject      *obj,
                   goto error;
                 }
 #endif /* HAVE_GPGME */
-
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+#endif
               if (commit_bytes != NULL)
                 break;
             }
@@ -6021,10 +6090,11 @@ ostree_repo_pull_from_remotes_async (OstreeRepo                           *self,
       g_variant_dict_insert_value (&local_options_dict, "collection-refs", g_variant_builder_end (&refs_to_pull_builder));
 #if defined(HAVE_GPGME)
       g_variant_dict_insert (&local_options_dict, "gpg-verify", "b", TRUE);
-#else
-      g_variant_dict_insert (&local_options_dict, "gpg-verify", "b", FALSE);
-#endif /* HAVE_GPGME */
       g_variant_dict_insert (&local_options_dict, "gpg-verify-summary", "b", FALSE);
+#endif /* HAVE_GPGME */
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+      g_variant_dict_insert (&local_options_dict, "sign-verify", "b", FALSE);
+#endif
       g_variant_dict_insert (&local_options_dict, "inherit-transaction", "b", TRUE);
       if (result->remote->refspec_name != NULL)
         g_variant_dict_insert (&local_options_dict, "override-remote-name", "s", result->remote->refspec_name);
