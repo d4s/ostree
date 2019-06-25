@@ -117,6 +117,16 @@ gboolean ostree_sign_commit_verify (OstreeSign *self,
                                     GError         **error);
 
 
+/**
+ * ostree_sign_list_names:
+ *
+ * Return the array with all available sign modules names.
+ *
+ * Returns: (transfer full): an array of strings, free when you used it
+ */
+_OSTREE_PUBLIC
+GStrv ostree_sign_list_names(void);
+
 /*
 _OSTREE_PUBLIC
 gboolean ostree_sign_commit_delete_signature (OstreeSign *self, GError **error);

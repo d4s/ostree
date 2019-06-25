@@ -222,6 +222,10 @@ ostree_sign_summary_verify (OstreeSign *self, GError **error)
     return OSTREE_SIGN_GET_IFACE (self)->summary_verify (self, error);
 }
 */
+#if defined(HAVE_GPG)
+#endif
+#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
+#endif
 
 const gchar * ostree_sign_get_name (OstreeSign *self)
 {
@@ -315,4 +319,20 @@ ostree_sign_commit (OstreeSign     *self,
   return TRUE;
 }
 
+GStrv ostree_sign_list_names(void)
+{
+  g_debug ("%s enter", __FUNCTION__);
 
+  GType types [] = { OSTREE_TYPE_SIGN_DUMMY };
+  GStrv names = g_new0 (char *, G_N_ELEMENTS(types)+1); 
+  gint i = 0;
+
+  for (i=0; i < G_N_ELEMENTS(types); i++)
+  {
+    g_autoptr (OstreeSign) sign = g_object_new (types[i], NULL);
+    names[i] = OSTREE_SIGN_GET_IFACE (sign)->get_name(sign);
+    g_debug ("Found '%s' signing module", names[i]);
+  }
+
+  return names;
+}
