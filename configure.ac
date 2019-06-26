@@ -239,8 +239,8 @@ AM_CONDITIONAL(USE_GPGME, test "x$have_gpgme" = xyes)
 
 LIBSODIUM_DEPENDENCY="1.0.14"
 AC_ARG_WITH(libsodium,
-	    AS_HELP_STRING([--with-libsodium], [Use libsodium @<:@default=yes@:>@]),
-	    [], [with_libsodium=$with_libsodium_default])
+	    AS_HELP_STRING([--with-libsodium], [Use libsodium @<:@default=no@:>@]),
+	    [], [with_libsodium=no])
 AS_IF([test x$with_libsodium != xno], [
     AC_DEFINE([HAVE_LIBSODIUM], 1, [Define if using libsodium])
     PKG_CHECK_MODULES(OT_DEP_LIBSODIUM, libsodium >= $LIBSODIUM_DEPENDENCY, have_libsodium=yes,  have_libsodium=no)
