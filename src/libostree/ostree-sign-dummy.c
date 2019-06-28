@@ -46,6 +46,25 @@ G_DEFINE_TYPE_WITH_CODE (OstreeSignDummy, ostree_sign_dummy, G_TYPE_OBJECT,
         G_IMPLEMENT_INTERFACE (OSTREE_TYPE_SIGN, ostree_sign_dummy_iface_init));
 
 static void
+ostree_sign_dummy_iface_init (OstreeSignInterface *self)
+{
+  g_debug ("%s enter", __FUNCTION__);
+
+  self->data = ostree_sign_dummy_data;
+  self->get_name = ostree_sign_dummy_get_name;
+  self->metadata_key = ostree_sign_dummy_metadata_key;
+  self->metadata_format = ostree_sign_dummy_metadata_format;
+  self->metadata_verify = ostree_sign_dummy_metadata_verify;
+  self->set_sk = ostree_sign_dummy_set_signature;
+  self->set_pk = ostree_sign_dummy_set_signature;
+}
+
+static void
+ostree_sign_dummy_class_init (OstreeSignDummyClass *self)
+{
+}
+
+static void
 ostree_sign_dummy_init (OstreeSignDummy *self)
 {
   g_debug ("%s enter", __FUNCTION__);
@@ -65,7 +84,7 @@ ostree_sign_dummy_finalize (GObject *gobject)
   G_OBJECT_CLASS (ostree_sign_dummy_parent_class)->finalize(gobject);
 }
 
-void ostree_sign_dummy_set_signature (OstreeSign *self, gchar *signature)
+gboolean ostree_sign_dummy_set_signature (OstreeSign *self, GVariant *key, GError **error)
 {
   g_debug ("%s enter", __FUNCTION__);
 
@@ -74,7 +93,9 @@ void ostree_sign_dummy_set_signature (OstreeSign *self, gchar *signature)
   if (sign->signature_ascii != NULL)
     g_free(sign->signature_ascii);
 
-  sign->signature_ascii = g_strdup(signature);
+  sign->signature_ascii = g_variant_dup_string (key, 0);
+
+  return TRUE;
 }
 
 gboolean ostree_sign_dummy_data (OstreeSign *self,
@@ -160,21 +181,4 @@ gboolean ostree_sign_dummy_metadata_verify (OstreeSign *self,
   return TRUE;
 err:
   return FALSE;
-}
-
-static void
-ostree_sign_dummy_iface_init (OstreeSignInterface *self)
-{
-  g_debug ("%s enter", __FUNCTION__);
-
-  self->data = ostree_sign_dummy_data;
-  self->get_name = ostree_sign_dummy_get_name;
-  self->metadata_key = ostree_sign_dummy_metadata_key;
-  self->metadata_format = ostree_sign_dummy_metadata_format;
-  self->metadata_verify = ostree_sign_dummy_metadata_verify;
-}
-
-static void
-ostree_sign_dummy_class_init (OstreeSignDummyClass *self)
-{
 }

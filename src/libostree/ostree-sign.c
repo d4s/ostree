@@ -34,6 +34,9 @@
 #include "ostree-core.h"
 #include "ostree-sign.h"
 #include "ostree-sign-dummy.h"
+#if defined(HAVE_LIBSODIUM)
+#include "ostree-sign-ed25519.h"
+#endif
 
 #define G_LOG_DOMAIN "OSTreeSign"
 
@@ -61,6 +64,29 @@ gchar * ostree_sign_metadata_format (OstreeSign *self)
   return OSTREE_SIGN_GET_IFACE (self)->metadata_format (self);
 }
 
+gboolean ostree_sign_set_sk (OstreeSign *self,
+                             GVariant *secret_key,
+                             GError **error)
+{
+  g_debug ("%s enter", __FUNCTION__);
+
+  if (OSTREE_SIGN_GET_IFACE (self)->set_sk == NULL)
+    return TRUE;
+
+  return OSTREE_SIGN_GET_IFACE (self)->set_sk (self, secret_key, error);
+}
+
+gboolean ostree_sign_set_pk (OstreeSign *self,
+                             GVariant *public_key,
+                             GError **error)
+{
+  g_debug ("%s enter", __FUNCTION__);
+
+  if (OSTREE_SIGN_GET_IFACE (self)->set_pk == NULL)
+    return TRUE;
+
+  return OSTREE_SIGN_GET_IFACE (self)->set_pk (self, public_key, error);
+}
 
 gboolean ostree_sign_data (OstreeSign *self,
                            GBytes *data,
@@ -85,8 +111,7 @@ ostree_sign_detached_metadata_append (OstreeSign *self,
                                       GBytes     *signature_bytes)
 {
   g_debug ("%s enter", __FUNCTION__);
-  if (existing_metadata != NULL)
-    g_print("%s", g_variant_print(existing_metadata, TRUE));
+  g_return_val_if_fail (signature_bytes != NULL, FALSE);
 
   GVariantDict metadata_dict;
   g_autoptr(GVariant) signature_data = NULL;
@@ -236,11 +261,16 @@ const gchar * ostree_sign_get_name (OstreeSign *self)
     return OSTREE_SIGN_GET_IFACE (self)->get_name (self);
 }
 
-OstreeSign * ostree_sign_get_by_name (const gchar *name)
+OstreeSign * ostree_sign_get_by_name (const gchar *name, GError **error)
 {
   g_debug ("%s enter", __FUNCTION__);
 
-  GType types [] = { OSTREE_TYPE_SIGN_DUMMY };
+  GType types [] = {
+#if defined(HAVE_LIBSODIUM)
+          OSTREE_TYPE_SIGN_ED25519,
+#endif
+          OSTREE_TYPE_SIGN_DUMMY
+  };
   OstreeSign *ret = NULL;
 
   for (gint i=0; i < G_N_ELEMENTS(types); i++)
@@ -256,6 +286,10 @@ OstreeSign * ostree_sign_get_by_name (const gchar *name)
       break;
     }
   }
+
+  if (ret == NULL)
+      g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                           "Requested signature type is not implemented");
 
   return ret;
 }
@@ -281,13 +315,14 @@ ostree_sign_commit (OstreeSign     *self,
 
   g_autoptr(GBytes) commit_data = NULL;
   g_autoptr(GBytes) signature = NULL;
-
   g_autoptr(GVariant) commit_variant = NULL;
+  g_autoptr(GVariant) old_metadata = NULL;
+  g_autoptr(GVariant) new_metadata = NULL;
+
   if (!ostree_repo_load_variant (repo, OSTREE_OBJECT_TYPE_COMMIT,
                                  commit_checksum, &commit_variant, error))
     return glnx_prefix_error (error, "Failed to read commit");
 
-  g_autoptr(GVariant) old_metadata = NULL;
   if (!ostree_repo_read_commit_detached_metadata (repo,
                                                   commit_checksum,
                                                   &old_metadata,
@@ -301,13 +336,10 @@ ostree_sign_commit (OstreeSign     *self,
 
   if (!ostree_sign_data (self, commit_data, &signature,
                          cancellable, error))
-    return FALSE;
+    return glnx_prefix_error (error, "Not able to sign the cobject");
 
-  g_autoptr(GVariant) new_metadata =
+  new_metadata =
     ostree_sign_detached_metadata_append (self, old_metadata, signature);
-
-  if (new_metadata != NULL)
-    g_print("New metadata: %s\n", g_variant_print(new_metadata, TRUE));
 
   if (!ostree_repo_write_commit_detached_metadata (repo,
                                                    commit_checksum,
@@ -323,7 +355,12 @@ GStrv ostree_sign_list_names(void)
 {
   g_debug ("%s enter", __FUNCTION__);
 
-  GType types [] = { OSTREE_TYPE_SIGN_DUMMY };
+  GType types [] = {
+#if defined(HAVE_LIBSODIUM)
+          OSTREE_TYPE_SIGN_ED25519,
+#endif
+          OSTREE_TYPE_SIGN_DUMMY
+  };
   GStrv names = g_new0 (char *, G_N_ELEMENTS(types)+1); 
   gint i = 0;
 
@@ -336,3 +373,5 @@ GStrv ostree_sign_list_names(void)
 
   return names;
 }
+
+

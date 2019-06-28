@@ -1518,7 +1518,7 @@ sign_verify_unwritten_commit (OtPullData                 *pull_data,
       GStrv names = ostree_sign_list_names();
       for (guint i=0; i < g_strv_length (names); i++)
         {
-          g_autoptr (OstreeSign) sign = ostree_sign_get_by_name (names[i]);
+          g_autoptr (OstreeSign) sign = ostree_sign_get_by_name (names[i], error);
           g_autoptr(GVariant) signatures = NULL;
           g_autofree gchar *signature_key = ostree_sign_metadata_key (sign);
           g_autofree GVariantType *signature_format = (GVariantType *) ostree_sign_metadata_format (sign);
@@ -1871,7 +1871,7 @@ scan_commit_object (OtPullData                 *pull_data,
       GStrv names = ostree_sign_list_names();
       for (guint i=0; i < g_strv_length (names); i++)
         {
-          g_autoptr (OstreeSign) sign = ostree_sign_get_by_name (names[i]);
+          g_autoptr (OstreeSign) sign = ostree_sign_get_by_name (names[i], error);
 
           if (ostree_sign_commit_verify (sign,
                                          pull_data->repo,

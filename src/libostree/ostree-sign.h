@@ -56,6 +56,15 @@ struct _OstreeSignInterface
                                 GVariant   *metadata,
                                 GError **error);
 
+  gboolean (* set_sk) (OstreeSign *self,
+                       GVariant *secret_key,
+                       GError **error);
+
+  gboolean (* set_pk) (OstreeSign *self,
+                       GVariant *public_key,
+                       GError **error);
+
+
 /*
   gboolean (* commit_verify) (OstreeSign *self, GError **error);
   gboolean (* commit_delete_signature) (OstreeSign *self, GError **error);
@@ -86,15 +95,6 @@ _OSTREE_PUBLIC
 GVariant * ostree_sign_detached_metadata_append (OstreeSign *self,
                                                  GVariant   *existing_metadata,
                                                  GBytes     *signature_bytes);
-/**
- * ostree_sign_get_by_name:
- *
- * Tries to find and return proper signing engine by it's name.
- *
- * Returns: (transfer full): a constant, free when you used it
- */
-_OSTREE_PUBLIC
-OstreeSign * ostree_sign_get_by_name (const gchar *name);
 
 _OSTREE_PUBLIC
 gboolean ostree_sign_commit (OstreeSign     *self,
@@ -116,6 +116,16 @@ gboolean ostree_sign_commit_verify (OstreeSign *self,
                                     GCancellable   *cancellable,
                                     GError         **error);
 
+_OSTREE_PUBLIC
+gboolean ostree_sign_set_sk (OstreeSign *self,
+                             GVariant *secret_key,
+                             GError **error);
+
+_OSTREE_PUBLIC
+gboolean ostree_sign_set_pk (OstreeSign *self,
+                             GVariant *public_key,
+                             GError **error);
+
 
 /**
  * ostree_sign_list_names:
@@ -126,6 +136,16 @@ gboolean ostree_sign_commit_verify (OstreeSign *self,
  */
 _OSTREE_PUBLIC
 GStrv ostree_sign_list_names(void);
+
+/**
+ * ostree_sign_get_by_name:
+ *
+ * Tries to find and return proper signing engine by it's name.
+ *
+ * Returns: (transfer full): a constant, free when you used it
+ */
+_OSTREE_PUBLIC
+OstreeSign * ostree_sign_get_by_name (const gchar *name, GError **error);
 
 /*
 _OSTREE_PUBLIC
