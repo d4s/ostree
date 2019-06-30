@@ -150,6 +150,10 @@ gboolean ostree_sign_dummy_metadata_verify (OstreeSign *self,
   g_return_val_if_fail (OSTREE_IS_SIGN (self), FALSE);
   g_return_val_if_fail (data != NULL, FALSE);
 
+  OstreeSignDummy *sign =  ostree_sign_dummy_get_instance_private(OSTREE_SIGN_DUMMY(self));
+
+  gboolean ret = FALSE;
+
   if (signatures == NULL)
     {
       g_set_error_literal (error,
@@ -176,9 +180,11 @@ gboolean ostree_sign_dummy_metadata_verify (OstreeSign *self,
       g_bytes_get_data (signature, &sign_size);
       g_autofree gchar *sign_ascii = g_strndup(g_bytes_get_data (signature, NULL), sign_size);
       g_debug("Read signature %ld: %s", i, sign_ascii);
+
+      if (!g_strcmp0(sign_ascii, sign->signature_ascii))
+          ret = TRUE;
     }
 
-  return TRUE;
 err:
-  return FALSE;
+  return ret;
 }
