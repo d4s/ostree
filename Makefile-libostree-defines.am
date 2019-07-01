@@ -58,8 +58,8 @@ libostree_public_headers += \
 	src/libostree/ostree-sign.h \
 	$(NULL)
 if USE_LIBSODIUM
-#	src/libostree/ostree-sign-ed25519.h \
-#	$(NULL)
+	src/libostree/ostree-sign-ed25519.h \
+	$(NULL)
 endif # USE_LIBSODIUM
 endif
 
