@@ -32,9 +32,13 @@
 #include "ostree-core-private.h"
 #include "ostree-sign.h"
 #include "ostree-sign-dummy.h"
+#if defined(HAVE_LIBSODIUM)
+#include "ostree-sign-ed25519.h"
+#endif
 
 static gboolean opt_delete;
 static gboolean opt_verify;
+static char *opt_sign_name;
 
 /* ATTENTION:
  * Please remember to update the bash-completion script (bash/ostree) and
@@ -43,9 +47,8 @@ static gboolean opt_verify;
 
 static GOptionEntry options[] = {
   { "delete", 'd', 0, G_OPTION_ARG_NONE, &opt_delete, "Delete signatures having any of the KEY-IDs", NULL},
-#if defined(OSTREE_ENABLE_EXPERIMENTAL_API)
   { "verify", 0, 0, G_OPTION_ARG_NONE, &opt_verify, "Verify signatures", NULL},
-#endif
+  { "sign-type", 's', 0, G_OPTION_ARG_STRING, &opt_sign_name, "Signature type to use (defaults to 'ed25519')", "NAME"},
 #if defined(HAVE_LIBSODIUM)
 #endif
    { NULL }
@@ -84,40 +87,6 @@ delete_signatures (OstreeRepo *repo,
 #endif
 
 gboolean
-ostree_repo_sign_init (GError **error);
-
-gboolean
-ostree_repo_sign_init (GError **error)
-{
-#if 0
-#if defined(__linux__) && defined(RNDGETENTCNT)
-  int fd;
-  int c;
-  if ((fd = open("/dev/random", O_RDONLY)) != -1) {
-    if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160) {
-      g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED,
-          "This system doesn't provide enough entropy to quickly generate high-quality random numbers.");
-      goto err;
-    }
-    (void) close(fd);
-  }
-#endif
-
-  if (sodium_init() < 0) {
-      g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED, "libsodium library couldn't be initialized");
-      goto err;
-    }
-
-#endif
-
-  return TRUE;
-
-err:
-  return FALSE;
-}
-//////////////////////////////////////////////////////////////////////
-
-gboolean
 ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation, GCancellable *cancellable, GError **error)
 {
   g_autoptr(GOptionContext) context = NULL;
@@ -128,9 +97,14 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
   char **key_ids;
   int n_key_ids, ii;
   gboolean ret = FALSE;
+#if defined(HAVE_LIBSODIUM)
+  g_autoptr (GVariant) ed25519_sk = NULL;
+  g_autoptr (GVariant) ed25519_pk = NULL;
+#endif
 
 
   context = g_option_context_new ("COMMIT KEY-ID...");
+
 
   if (!ostree_option_context_parse (context, options, &argc, &argv, invocation, &repo, cancellable, error))
     goto out;
@@ -156,50 +130,104 @@ ostree_builtin_sign (int argc, char **argv, OstreeCommandInvocation *invocation,
     goto out;
 
   /* Initialize crypto system */
-  sign = ostree_sign_get_by_name("dummy");
+  if (!opt_sign_name)
+    opt_sign_name = "ed25519";
+
+  sign = ostree_sign_get_by_name (opt_sign_name, error);
   if (sign == NULL)
     {
       ret = FALSE;
       goto out;
     }
 
-  if (opt_delete)
-    {
-      guint n_deleted = 0;
-
-      if (delete_signatures (repo, resolved_commit,
-                             (const char * const *) key_ids, n_key_ids,
-                             &n_deleted, cancellable, error))
-        {
-          g_print ("Signatures deleted: %u\n", n_deleted);
-          ret = TRUE;
-        }
-
-      goto out;
-    }
-
-  if (opt_verify)
-    {
-      ret = ostree_sign_commit_verify (sign,
-                                       repo,
-                                       resolved_commit,
-                                       cancellable,
-                                       error);
-      goto out;
-    }
-
   for (ii = 0; ii < n_key_ids; ii++)
     {
-      if (!g_strcmp0(ostree_sign_get_name(sign), "dummy"))
-          // Just use the string as signature
-          ostree_sign_dummy_set_signature(sign, key_ids[ii]);
+      g_autoptr (GVariant) sk = NULL;
+      g_autoptr (GVariant) pk = NULL;
+      gsize key_len = 0;
+      g_autofree guchar *key = NULL;
 
-      if (!ostree_sign_commit (sign, repo, resolved_commit,
-                               cancellable, error))
-        goto out;
+
+g_message("Read key: %s", key_ids[ii]);
+      if (!g_strcmp0(ostree_sign_get_name(sign), "dummy"))
+        {
+          // Just use the string as signature
+          sk = g_variant_new_string(key_ids[ii]);
+          pk = g_variant_new_string(key_ids[ii]);
+        }
+      if (opt_verify)
+        {
+#if defined(HAVE_LIBSODIUM)
+      if (!g_strcmp0(ostree_sign_get_name(sign), "ed25519"))
+        {
+          key = g_malloc0 (crypto_sign_PUBLICKEYBYTES);
+          if (sodium_hex2bin (key, crypto_sign_PUBLICKEYBYTES,
+                              key_ids[ii], strlen (key_ids[ii]),
+                              NULL, &key_len, NULL) != 0)
+            {
+              g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                           "Invalid KEY '%s'", key_ids[ii]);
+
+              goto out;
+            }
+
+          pk = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, key, key_len, sizeof(guchar));
+        }
+#endif
+
+          if (!ostree_sign_set_pk (sign, pk, error))
+            {
+              ret = FALSE;
+              goto out;
+            }
+
+          if (ostree_sign_commit_verify (sign,
+                                         repo,
+                                         resolved_commit,
+                                         cancellable,
+                                         error))
+            ret = TRUE;
+        }
+      else
+        {
+#if defined(HAVE_LIBSODIUM)
+          if (!g_strcmp0(ostree_sign_get_name(sign), "ed25519"))
+            {
+              key = g_malloc0 (crypto_sign_SECRETKEYBYTES);
+              if (sodium_hex2bin (key, crypto_sign_SECRETKEYBYTES,
+                                  key_ids[ii], strlen (key_ids[ii]),
+                                  NULL, &key_len, NULL) != 0)
+                {
+                  g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                               "Invalid KEY '%s'", key_ids[ii]);
+
+                  goto out;
+                }
+
+              sk = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, key, key_len, sizeof(guchar));
+            }
+#endif
+          if (!ostree_sign_set_sk (sign, sk, error))
+            {
+              ret = FALSE;
+              goto out;
+            }
+
+          ret = ostree_sign_commit (sign,
+                                    repo,
+                                    resolved_commit,
+                                    cancellable,
+                                    error);
+          if (ret != TRUE)
+            goto out;
+        }
     }
 
-  ret = TRUE;
+  // No valid signature found
+  if (opt_verify && (ret != TRUE))
+    g_set_error_literal (error,
+                         G_IO_ERROR, G_IO_ERROR_FAILED,
+                         "No valid signatures found");
 
 out:
   return ret;
