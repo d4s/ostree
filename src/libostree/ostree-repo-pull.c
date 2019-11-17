@@ -1503,9 +1503,20 @@ _load_public_keys (OtPullData *pull_data,
                                  "verification-key", NULL,
                                  &pk_ascii, NULL);
 
-  /* return TRUE if no configuration for remote */
+  /* return TRUE if there is no configuration for remote */
   if ((pk_file == NULL) &&(pk_ascii == NULL))
-    return TRUE;
+    {
+      /* It is expected what remote may have verification file as
+       * a part of configuration. Hence there is not a lot of sense
+       * for automatic resolve of per-remote keystore file as it
+       * used in find_keyring () for GPG.
+       * If it is needed to add the similar mechanism, it is preferable
+       * to pass the path to ostree_sign_load_pk () via GVariant options
+       * and call it here for loading with method and file structure
+       * specific for signature type.
+       */
+      return TRUE;
+    }
 
   if (pk_file != NULL)
     {
